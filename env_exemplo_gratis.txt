@@ -1,0 +1,9 @@
+# Renomeie este arquivo para:  .env
+# e preencha com suas chaves (sem aspas, sem espacos)
+
+TELEGRAM_TOKEN=cole_aqui_o_token_do_botfather
+GEMINI_API_KEY=cole_aqui_sua_chave_do_google_ai_studio
+GROQ_API_KEY=cole_aqui_sua_chave_do_groq
+
+STUDENT_NAME=Luiz Gustavo
+STUDENT_INTERESTS=logistics and freight management, football tactics, building SaaS apps, Python and Power BI

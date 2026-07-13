@@ -1,0 +1,15 @@
+# NUNCA suba estes arquivos para o GitHub!
+
+# Chaves secretas
+.env
+
+# Seu progresso pessoal (banco de dados)
+english_progress.db
+
+# Áudios temporários
+audios/
+
+# Ambiente virtual do Python
+venv/
+__pycache__/
+*.pyc
