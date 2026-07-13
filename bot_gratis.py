@@ -351,6 +351,7 @@ def call_gemini(system_prompt: str, history: list) -> str:
     }
 
     last_error = ""
+    saw_429 = False
     for model in dict.fromkeys(FALLBACK_MODELS):  # remove duplicados
         r = requests.post(
             GEMINI_URL.format(model=model), headers=headers, json=body, timeout=90
@@ -368,21 +369,24 @@ def call_gemini(system_prompt: str, history: list) -> str:
             last_error = f"200 sem texto: {str(data)[:300]}"
             log.warning("Gemini modelo '%s' -> %s", model, last_error)
             continue
-        if r.status_code == 429:
-            return (
-                "⏳ Atingimos o limite gratuito de mensagens por enquanto. "
-                "Espera 1 minuto e manda de novo (ou volta amanhã se persistir)."
-            )
-        # 404 = modelo não existe para esta chave -> tenta o próximo da lista
         last_error = f"{r.status_code}: {r.text[:400]}"
         log.warning("Gemini modelo '%s' falhou -> %s", model, last_error)
-        if r.status_code != 404:
-            break  # erro que não é de modelo (ex: chave inválida): não adianta insistir
+        if r.status_code == 429:
+            saw_429 = True   # cota deste modelo esgotada -> tenta o próximo
+            continue
+        if r.status_code in (404, 503):
+            continue         # modelo indisponível/lotado -> tenta o próximo
+        break  # erro de chave/permissão (400/401/403): não adianta insistir
 
     log.error("Gemini indisponível. Último erro: %s", last_error)
+    if saw_429:
+        return (
+            "⏳ Atingimos o limite gratuito de hoje nos modelos disponíveis. "
+            "A cota renova em algumas horas — tenta de novo mais tarde!"
+        )
     return (
-        "⚠️ O professor está temporariamente indisponível (problema técnico "
-        "com a IA). Já registrei o erro nos logs — tenta de novo em instantes."
+        "⚠️ Os servidores da IA estão lotados neste momento (alta demanda). "
+        "É passageiro — espera 1 minuto e manda a mensagem de novo."
     )
 
 
