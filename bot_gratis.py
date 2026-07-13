@@ -39,7 +39,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GEMINI_KEY = os.getenv("GEMINI_API_KEY")
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 TTS_VOICE = os.getenv("TTS_VOICE", "en-US-AndrewNeural")
 
 STUDENT_NAME = os.getenv("STUDENT_NAME", "Luiz Gustavo")
@@ -325,9 +325,10 @@ GEMINI_URL = (
 # Se o primeiro modelo não existir para a sua chave, tenta os próximos:
 FALLBACK_MODELS = [
     GEMINI_MODEL,
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
     "gemini-flash-latest",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
 ]
 
 
@@ -449,7 +450,7 @@ class _HealthHandler(BaseHTTPRequestHandler):
     def _teste_gemini(self):
         """Página de diagnóstico: testa o Gemini dos 2 jeitos e mostra a
         resposta crua do Google (sem expor a chave)."""
-        model = "gemini-2.5-flash"
+        model = GEMINI_MODEL
         mini_body = {
             "contents": [{"role": "user", "parts": [{"text": "Say only: OK"}]}]
         }
