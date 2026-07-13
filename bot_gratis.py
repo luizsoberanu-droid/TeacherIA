@@ -330,6 +330,41 @@ FALLBACK_MODELS = [
     "gemini-3-flash-preview",
     "gemini-flash-latest",
 ]
+# Professor RESERVA no Groq (cota gratuita generosa, chave que você já tem):
+GROQ_CHAT_MODELS = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+
+
+def call_groq_chat(system_prompt: str, history: list) -> str | None:
+    """Plano C: usa o Groq (Llama) como professor quando o Gemini esgota."""
+    msgs = [{"role": "system", "content": system_prompt}] + [
+        {"role": m["role"], "content": m["content"]} for m in history
+    ]
+    for model in GROQ_CHAT_MODELS:
+        try:
+            r = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": msgs,
+                    "max_tokens": 2000,
+                    "temperature": 0.7,
+                },
+                timeout=90,
+            )
+            if r.status_code == 200:
+                log.info("Professor reserva (Groq %s) assumiu a aula.", model)
+                return r.json()["choices"][0]["message"]["content"]
+            log.warning(
+                "Groq modelo '%s' falhou -> %s: %s",
+                model, r.status_code, r.text[:300],
+            )
+        except Exception as e:
+            log.warning("Groq erro de conexão: %s", e)
+    return None
 
 
 def call_gemini(system_prompt: str, history: list) -> str:
@@ -379,6 +414,12 @@ def call_gemini(system_prompt: str, history: list) -> str:
         break  # erro de chave/permissão (400/401/403): não adianta insistir
 
     log.error("Gemini indisponível. Último erro: %s", last_error)
+
+    # Plano C: professor reserva no Groq
+    texto = call_groq_chat(system_prompt, history)
+    if texto:
+        return texto
+
     if saw_429:
         return (
             "⏳ Atingimos o limite gratuito de hoje nos modelos disponíveis. "
@@ -478,6 +519,29 @@ class _HealthHandler(BaseHTTPRequestHandler):
                 linhas += [titulo, f"STATUS: {r.status_code}", "RESPOSTA:", corpo, ""]
             except Exception as e:
                 linhas += [titulo, f"ERRO DE CONEXÃO: {e}", ""]
+        try:
+            r = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {GROQ_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": GROQ_CHAT_MODELS[0],
+                    "messages": [{"role": "user", "content": "Say only: OK"}],
+                    "max_tokens": 10,
+                },
+                timeout=30,
+            )
+            linhas += [
+                f"3) PROFESSOR RESERVA Groq ({GROQ_CHAT_MODELS[0]})",
+                f"STATUS: {r.status_code}",
+                "RESPOSTA:",
+                r.text[:800],
+                "",
+            ]
+        except Exception as e:
+            linhas += ["3) PROFESSOR RESERVA Groq", f"ERRO DE CONEXÃO: {e}", ""]
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
