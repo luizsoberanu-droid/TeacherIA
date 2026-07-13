@@ -320,8 +320,15 @@ whenever you correct 2 or more errors in a single reply, even mid-session.
 JSON_RE = re.compile(r"\[ERROR_LOG_JSON\](.*?)\[/ERROR_LOG_JSON\]", re.S)
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
-    "{model}:generateContent?key={key}"
+    "{model}:generateContent"
 )
+# Se o primeiro modelo não existir para a sua chave, tenta os próximos:
+FALLBACK_MODELS = [
+    GEMINI_MODEL,
+    "gemini-flash-latest",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+]
 
 
 def call_gemini(system_prompt: str, history: list) -> str:
@@ -337,20 +344,36 @@ def call_gemini(system_prompt: str, history: list) -> str:
         "contents": contents,
         "generationConfig": {"maxOutputTokens": 1500, "temperature": 0.7},
     }
-    r = requests.post(
-        GEMINI_URL.format(model=GEMINI_MODEL, key=GEMINI_KEY),
-        json=body,
-        timeout=90,
-    )
-    if r.status_code == 429:
-        return (
-            "⏳ Atingimos o limite gratuito de mensagens por enquanto. "
-            "Espera 1 minuto e manda de novo (ou volta amanhã se persistir)."
+    headers = {
+        "x-goog-api-key": GEMINI_KEY,   # chave vai no cabeçalho (formato novo)
+        "Content-Type": "application/json",
+    }
+
+    last_error = ""
+    for model in dict.fromkeys(FALLBACK_MODELS):  # remove duplicados
+        r = requests.post(
+            GEMINI_URL.format(model=model), headers=headers, json=body, timeout=90
         )
-    r.raise_for_status()
-    data = r.json()
-    parts = data["candidates"][0]["content"]["parts"]
-    return "".join(p.get("text", "") for p in parts)
+        if r.status_code == 200:
+            data = r.json()
+            parts = data["candidates"][0]["content"]["parts"]
+            return "".join(p.get("text", "") for p in parts)
+        if r.status_code == 429:
+            return (
+                "⏳ Atingimos o limite gratuito de mensagens por enquanto. "
+                "Espera 1 minuto e manda de novo (ou volta amanhã se persistir)."
+            )
+        # 404 = modelo não existe para esta chave -> tenta o próximo da lista
+        last_error = f"{r.status_code}: {r.text[:400]}"
+        log.warning("Gemini modelo '%s' falhou -> %s", model, last_error)
+        if r.status_code != 404:
+            break  # erro que não é de modelo (ex: chave inválida): não adianta insistir
+
+    log.error("Gemini indisponível. Último erro: %s", last_error)
+    return (
+        "⚠️ O professor está temporariamente indisponível (problema técnico "
+        "com a IA). Já registrei o erro nos logs — tenta de novo em instantes."
+    )
 
 
 def ask_professor(chat_id: int, user_text: str) -> str:
