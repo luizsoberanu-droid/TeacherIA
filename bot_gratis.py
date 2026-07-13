@@ -342,7 +342,7 @@ def call_gemini(system_prompt: str, history: list) -> str:
     body = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
         "contents": contents,
-        "generationConfig": {"maxOutputTokens": 1500, "temperature": 0.7},
+        "generationConfig": {"maxOutputTokens": 4000, "temperature": 0.7},
     }
     headers = {
         "x-goog-api-key": GEMINI_KEY,   # chave vai no cabeçalho (formato novo)
@@ -356,8 +356,17 @@ def call_gemini(system_prompt: str, history: list) -> str:
         )
         if r.status_code == 200:
             data = r.json()
-            parts = data["candidates"][0]["content"]["parts"]
-            return "".join(p.get("text", "") for p in parts)
+            cand = (data.get("candidates") or [{}])[0]
+            parts = (cand.get("content") or {}).get("parts") or []
+            text = "".join(
+                p.get("text", "") for p in parts if not p.get("thought")
+            )
+            if text.strip():
+                return text
+            # 200 mas sem texto (ex: modelo gastou tudo "pensando")
+            last_error = f"200 sem texto: {str(data)[:300]}"
+            log.warning("Gemini modelo '%s' -> %s", model, last_error)
+            continue
         if r.status_code == 429:
             return (
                 "⏳ Atingimos o limite gratuito de mensagens por enquanto. "
@@ -429,10 +438,45 @@ async def send_long(update: Update, text: str):
 # ------------------------------------------------------------
 class _HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith("/teste-gemini"):
+            self._teste_gemini()
+            return
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
         self.wfile.write("✅ Prof. Ace está online!".encode("utf-8"))
+
+    def _teste_gemini(self):
+        """Página de diagnóstico: testa o Gemini dos 2 jeitos e mostra a
+        resposta crua do Google (sem expor a chave)."""
+        model = "gemini-2.5-flash"
+        mini_body = {
+            "contents": [{"role": "user", "parts": [{"text": "Say only: OK"}]}]
+        }
+        linhas = [f"=== DIAGNÓSTICO GEMINI (modelo: {model}) ===", ""]
+        testes = [
+            (
+                "1) Chave no CABEÇALHO (x-goog-api-key)",
+                GEMINI_URL.format(model=model),
+                {"x-goog-api-key": GEMINI_KEY, "Content-Type": "application/json"},
+            ),
+            (
+                "2) Chave na URL (?key=...)",
+                GEMINI_URL.format(model=model) + "?key=" + GEMINI_KEY,
+                {"Content-Type": "application/json"},
+            ),
+        ]
+        for titulo, url, headers in testes:
+            try:
+                r = requests.post(url, headers=headers, json=mini_body, timeout=30)
+                corpo = r.text[:1500]
+                linhas += [titulo, f"STATUS: {r.status_code}", "RESPOSTA:", corpo, ""]
+            except Exception as e:
+                linhas += [titulo, f"ERRO DE CONEXÃO: {e}", ""]
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write("\n".join(linhas).encode("utf-8"))
 
     def do_HEAD(self):
         self.send_response(200)
